@@ -76,10 +76,6 @@ def main():
         st.session_state.uploaded_files = uploaded
 
     if "uploaded_files" in st.session_state and st.session_state.uploaded_files:
-        # st.markdown("#### 圖片預覽：")
-        # for file in st.session_state.uploaded_files:
-        #     st.image(file, caption=file.name, use_container_width=True)
-
         if st.button("🚀 產生PPT"):
             prs = Presentation()
             files = st.session_state.uploaded_files
