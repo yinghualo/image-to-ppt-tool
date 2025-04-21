@@ -1,64 +1,98 @@
-# 將圖片轉為PPT的 Streamlit 版本（介面與功能與原始版本一致）
-
 import streamlit as st
 from pptx import Presentation
-from pptx.util import Inches, Pt
+from pptx.util import Cm, Pt
 from PIL import Image
-import os
 import io
-import zipfile
 
-def convert_images_to_ppt(uploaded_files, resize_option, width, height):
-    prs = Presentation()
+layout_order = [
+    "center",
+    "top",
+    "bottom",
+    "left",
+    "right"
+]
+
+def create_slide(prs, images):
     blank_slide_layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank_slide_layout)
+    slide_width = prs.slide_width
+    slide_height = prs.slide_height
 
-    for uploaded_file in uploaded_files:
-        image = Image.open(uploaded_file)
-        filename = os.path.splitext(uploaded_file.name)[0]
+    margin_cm = 1
+    margin = Cm(margin_cm)
+    px=Pt(2) #間距
+    usable_width = slide_width - 2 * margin
+    usable_height = slide_height - 2 * margin
 
-        slide = prs.slides.add_slide(blank_slide_layout)
+    cx = slide_width / 2
+    cy = slide_height / 2
 
-        if resize_option == "resize":
-            image = image.resize((width, height))
-            temp_bytes = io.BytesIO()
-            image.save(temp_bytes, format="PNG")
-            temp_bytes.seek(0)
-            slide.shapes.add_picture(temp_bytes, Inches(1), Inches(1), width=Inches(8))
+    positions = {
+        "center": (cx, cy),
+        "top": (cx, px+cy - usable_height / 3),
+        "bottom": (cx, cy-px + usable_height / 3),
+        "left": (cx-px - usable_width / 3, cy),
+        "right": (px+cx + usable_width / 3, cy)
+    }#用px多一些間距
+
+    max_width = usable_width / 3
+    max_height = usable_height / 3
+
+    for i, image_file in enumerate(images):
+        if i >= len(layout_order):
+            break
+
+        img = Image.open(image_file)
+        img_ratio = img.width / img.height
+        box_ratio = max_width / max_height
+
+        if img_ratio > box_ratio:
+            final_width = max_width
+            final_height = max_width / img_ratio
         else:
-            temp_bytes = io.BytesIO()
-            image.save(temp_bytes, format="PNG")
-            temp_bytes.seek(0)
-            slide.shapes.add_picture(temp_bytes, Inches(1), Inches(1), width=Inches(8))
+            final_height = max_height
+            final_width = max_height * img_ratio
 
-        # 標題
-        title_box = slide.shapes.add_textbox(Inches(1), Inches(0.2), Inches(8), Inches(1))
-        tf = title_box.text_frame
-        tf.text = filename
-        tf.paragraphs[0].font.size = Pt(24)
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
 
-    ppt_bytes = io.BytesIO()
-    prs.save(ppt_bytes)
-    ppt_bytes.seek(0)
-    return ppt_bytes
+        pos_x, pos_y = positions[layout_order[i]]
+        print(pos_x, pos_y)
+        slide.shapes.add_picture(img_byte_arr, pos_x - final_width / 2, pos_y - final_height / 2, width=final_width, height=final_height)
 
-# 建立 Streamlit 網頁
-st.title("🖼️ 圖片轉 PPT 工具")
-st.markdown("將多張圖片一鍵轉成 PowerPoint，每張圖片一頁，並用檔名作為標題。")
+def main():
+    st.set_page_config(page_title="圖片轉 PowerPoint 工具")
+    st.title("✨圖片轉 PowerPoint（5圖一頁排版）")
+    st.markdown("➡️請上傳圖片，系統會以每 5 張圖一頁，依序排列生成簡報。  \n➡️排列方式為：中間、上方、下方、左側、右側。")
 
-uploaded_files = st.file_uploader("請選擇圖片（可多選）", type=["png", "jpg", "jpeg", "bmp", "gif"], accept_multiple_files=True)
+    uploaded = st.file_uploader(
+        "拖曳圖片到這裡（圖片大小上限 200MB，每頁 5 張圖）",
+        type=["png", "jpg", "jpeg", "bmp", "gif"],
+        accept_multiple_files=True
+    )
 
-resize_option = st.radio("圖片處理方式：", ["keep", "resize"], format_func=lambda x: "維持原尺寸" if x=="keep" else "縮放成指定尺寸")
+    if uploaded:
+        st.session_state.uploaded_files = uploaded
 
-col1, col2 = st.columns(2)
-with col1:
-    width = st.number_input("寬度 (px)", value=800, step=50)
-with col2:
-    height = st.number_input("高度 (px)", value=600, step=50)
+    if "uploaded_files" in st.session_state and st.session_state.uploaded_files:
+        # st.markdown("#### 圖片預覽：")
+        # for file in st.session_state.uploaded_files:
+        #     st.image(file, caption=file.name, use_container_width=True)
 
-if st.button("🚀 產生 PPT"):
-    if uploaded_files:
-        ppt_data = convert_images_to_ppt(uploaded_files, resize_option, int(width), int(height))
-        st.success("✅ 轉換完成！")
-        st.download_button("⬇️ 下載 PPT", ppt_data, file_name="converted.pptx")
-    else:
-        st.warning("請先上傳圖片喔！")
+        if st.button("🚀 產生PPT"):
+            prs = Presentation()
+            files = st.session_state.uploaded_files
+            for i in range(0, len(files), 5):
+                group = files[i:i+5]
+                create_slide(prs, group)
+
+            pptx_io = io.BytesIO()
+            prs.save(pptx_io)
+            pptx_io.seek(0)
+
+            st.success("✅ PPT產生成功！")
+            st.download_button("⬇️ 下載PPT", pptx_io, file_name="images_to_ppt.pptx")
+
+if __name__ == "__main__":
+    main()
