@@ -4,45 +4,64 @@ from pptx.util import Cm, Pt
 from PIL import Image
 import io
 
-layout_order = [
-    "center",
-    "top",
-    "bottom",
-    "left",
-    "right"
-]
+def create_slide_5(prs, images,inputMargin,inputPadding):
+    layout_order = ["center", "top", "bottom", "left", "right"]
+    blank_slide_layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank_slide_layout)
+    slide_width = prs.slide_width
+    slide_height = prs.slide_height
+    margin = Cm(inputMargin)
+    px = Pt(inputPadding)
+    usable_width = slide_width - 2 * margin
+    usable_height = slide_height - 2 * margin
+    cx, cy = slide_width / 2, slide_height / 2
+    positions = {
+        "center": (cx, cy),
+        "top": (cx, px + cy - usable_height / 3),
+        "bottom": (cx, cy - px + usable_height / 3),
+        "left": (cx - px - usable_width / 3, cy),
+        "right": (px + cx + usable_width / 3, cy)
+    }
+    max_width = usable_width / 3
+    max_height = usable_height / 3
+    for i, image_file in enumerate(images):
+        if i >= len(layout_order):
+            break
+        insert_image(slide, image_file, positions[layout_order[i]], max_width, max_height)
 
-def create_slide(prs, images):
+def create_slide_8(prs, images,inputMargin,inputPadding):
     blank_slide_layout = prs.slide_layouts[6]
     slide = prs.slides.add_slide(blank_slide_layout)
     slide_width = prs.slide_width
     slide_height = prs.slide_height
 
-    margin_cm = 1
-    margin = Cm(margin_cm)
-    px=Pt(2) #間距
+    margin = Cm(inputMargin)
+    px = Pt(inputPadding)
     usable_width = slide_width - 2 * margin
     usable_height = slide_height - 2 * margin
 
-    cx = slide_width / 2
-    cy = slide_height / 2
+    cols, rows = 3, 3
+    cell_width = usable_width / cols
+    cell_height = usable_height / rows
 
-    positions = {
-        "center": (cx, cy),
-        "top": (cx, px+cy - usable_height / 3),
-        "bottom": (cx, cy-px + usable_height / 3),
-        "left": (cx-px - usable_width / 3, cy),
-        "right": (px+cx + usable_width / 3, cy)
-    }#用px多一些間距
+    max_width = cell_width - px
+    max_height = cell_height - px
 
-    max_width = usable_width / 3
-    max_height = usable_height / 3
+    # 特殊排列順序：index 代表位置，值代表第幾張圖片（1-based）
+    layout_index = [3, 8, 4,
+                    5, 1, 6,
+                    2, 7, None]
 
-    for i, image_file in enumerate(images):
-        if i >= len(layout_order):
-            break
+    for pos, img_num in enumerate(layout_index):
+        if img_num is None or img_num > len(images):
+            continue
 
-        img = Image.open(image_file)
+        row = pos // cols
+        col = pos % cols
+        pos_x = margin + col * cell_width + cell_width / 2
+        pos_y = margin + row * cell_height + cell_height / 2
+
+        img = Image.open(images[img_num - 1])
         img_ratio = img.width / img.height
         box_ratio = max_width / max_height
 
@@ -57,17 +76,44 @@ def create_slide(prs, images):
         img.save(img_byte_arr, format='PNG')
         img_byte_arr.seek(0)
 
-        pos_x, pos_y = positions[layout_order[i]]
-        #print(pos_x, pos_y)
-        slide.shapes.add_picture(img_byte_arr, pos_x - final_width / 2, pos_y - final_height / 2, width=final_width, height=final_height)
+        slide.shapes.add_picture(
+            img_byte_arr,
+            pos_x - final_width / 2,
+            pos_y - final_height / 2,
+            width=final_width,
+            height=final_height
+        )
+
+def insert_image(slide, image_file, center_pos, max_width, max_height):
+    img = Image.open(image_file)
+    img_ratio = img.width / img.height
+    box_ratio = max_width / max_height
+    if img_ratio > box_ratio:
+        final_width = max_width
+        final_height = max_width / img_ratio
+    else:
+        final_height = max_height
+        final_width = max_height * img_ratio
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
+    pos_x, pos_y = center_pos
+    slide.shapes.add_picture(
+        img_byte_arr,
+        pos_x - final_width / 2,
+        pos_y - final_height / 2,
+        width=final_width,
+        height=final_height
+    )
 
 def main():
     st.set_page_config(page_title="圖片轉 PowerPoint 工具")
-    st.title("✨圖片轉 PowerPoint（5圖一頁排版）")
-    st.markdown("➡️請上傳圖片，系統會以每 5 張圖一頁，依序排列生成簡報。  \n➡️排列方式為：中間、上方、下方、左側、右側。")
-
+    st.title("🖼️ 圖片轉 PowerPoint 工具")
+    layout_mode = st.selectbox("選擇排版模式", ["5圖一頁（中心、上、下、左、右）", "8圖一頁（九宮格依序為38451627）"])
+    layout_margin=st.number_input("簡報邊界(cm)",1)#預設為1公分
+    layout_padding=st.number_input("圖片間距(px)",2)#預設為2px
     uploaded = st.file_uploader(
-        "拖曳圖片到這裡（圖片大小上限 200MB，每頁 5 張圖）",
+        "拖曳圖片上傳（最多200MB）",
         type=["png", "jpg", "jpeg", "bmp", "gif"],
         accept_multiple_files=True
     )
@@ -76,19 +122,27 @@ def main():
         st.session_state.uploaded_files = uploaded
 
     if "uploaded_files" in st.session_state and st.session_state.uploaded_files:
+        # st.markdown("#### 預覽圖片")
+        # for file in st.session_state.uploaded_files:
+        #     st.image(file, caption=file.name, use_container_width=True)
+
         if st.button("🚀 產生PPT"):
             prs = Presentation()
             files = st.session_state.uploaded_files
-            for i in range(0, len(files), 5):
-                group = files[i:i+5]
-                create_slide(prs, group)
+
+            if layout_mode.startswith("8圖"):
+                for i in range(0, len(files), 8):
+                    create_slide_8(prs, files[i:i+8],layout_margin,layout_padding)
+            elif layout_mode.startswith("5圖"):
+                for i in range(0, len(files), 5):
+                    create_slide_5(prs, files[i:i+5],layout_margin,layout_padding)
 
             pptx_io = io.BytesIO()
             prs.save(pptx_io)
             pptx_io.seek(0)
 
             st.success("✅ PPT產生成功！")
-            st.download_button("⬇️ 下載PPT", pptx_io, file_name="images_to_ppt.pptx")
+            st.download_button("📥 下載PPT", pptx_io, file_name="images_to_ppt.pptx")
 
 if __name__ == "__main__":
     main()
