@@ -4,7 +4,7 @@ from pptx.util import Cm, Pt
 from PIL import Image
 import io
 
-def create_slide_5(prs, images,inputMargin,inputPadding):
+def create_slide_5(prs, images,inputMargin,inputPadding,quality):
     layout_order = ["center", "top", "bottom", "left", "right"]
     blank_slide_layout = prs.slide_layouts[6]
     slide = prs.slides.add_slide(blank_slide_layout)
@@ -29,7 +29,7 @@ def create_slide_5(prs, images,inputMargin,inputPadding):
             break
         insert_image(slide, image_file, positions[layout_order[i]], max_width, max_height)
 
-def create_slide_8(prs, images,inputMargin,inputPadding):
+def create_slide_8(prs, images,inputMargin,inputPadding,quality):
     blank_slide_layout = prs.slide_layouts[6]
     slide = prs.slides.add_slide(blank_slide_layout)
     slide_width = prs.slide_width
@@ -73,7 +73,9 @@ def create_slide_8(prs, images,inputMargin,inputPadding):
             final_width = max_height * img_ratio
 
         img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
+        #改存成JPEG並調整壓縮品質以控制簡報大小
+        #img.save(img_byte_arr, format='PNG')
+        img.convert("RGB").save(img_byte_arr, format='JPEG', quality=quality)       
         img_byte_arr.seek(0)
 
         slide.shapes.add_picture(
@@ -109,7 +111,7 @@ def insert_image(slide, image_file, center_pos, max_width, max_height):
 def main():
     st.set_page_config(page_title="圖片轉 PowerPoint 工具")
     st.title("🖼️ 圖片轉 PowerPoint 工具")
-    layout_mode = st.selectbox("選擇排版模式", ["5圖一頁（中心、上、下、左、右）", "8圖一頁（九宮格依序為38451627）"])
+    layout_mode = st.selectbox("選擇排版模式", ["8圖一頁（九宮格依序為38451627）", "5圖一頁（中心、上、下、左、右）"])
     layout_margin=st.number_input("簡報邊界(cm)",1)#預設為1公分
     layout_padding=st.number_input("圖片間距(px)",2)#預設為2px
     uploaded = st.file_uploader(
@@ -118,13 +120,24 @@ def main():
         accept_multiple_files=True
     )
 
+    compression_option = st.selectbox("圖片壓縮設定：", [
+        "建議（輕壓縮）85%",
+        "原圖（無壓縮）100%",
+        "小檔（高壓縮）65%"
+    ])
+
+    quality_dict = {
+        "原圖（無壓縮）100%": 100,
+        "建議（輕壓縮）85%": 85,
+        "小檔（高壓縮）65%": 65
+    }
+
+    quality = quality_dict[compression_option]
+    
     if uploaded:
         st.session_state.uploaded_files = uploaded
 
     if "uploaded_files" in st.session_state and st.session_state.uploaded_files:
-        # st.markdown("#### 預覽圖片")
-        # for file in st.session_state.uploaded_files:
-        #     st.image(file, caption=file.name, use_container_width=True)
 
         if st.button("🚀 產生PPT"):
             prs = Presentation()
@@ -132,10 +145,10 @@ def main():
 
             if layout_mode.startswith("8圖"):
                 for i in range(0, len(files), 8):
-                    create_slide_8(prs, files[i:i+8],layout_margin,layout_padding)
+                    create_slide_8(prs, files[i:i+8],layout_margin,layout_padding,quality)
             elif layout_mode.startswith("5圖"):
                 for i in range(0, len(files), 5):
-                    create_slide_5(prs, files[i:i+5],layout_margin,layout_padding)
+                    create_slide_5(prs, files[i:i+5],layout_margin,layout_padding,quality)
 
             pptx_io = io.BytesIO()
             prs.save(pptx_io)
@@ -143,6 +156,7 @@ def main():
 
             st.success("✅ PPT產生成功！")
             st.download_button("📥 下載PPT", pptx_io, file_name="images_to_ppt.pptx")
+            st.session_state.clear()  # ⬅️ 自動清除 session 狀態
 
 if __name__ == "__main__":
     main()
